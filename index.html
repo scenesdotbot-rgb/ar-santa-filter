@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Santa AR Filter - Merry Christmas!</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <style>
+        :root {
+            --red: #c0392b;
+            --white: #ffffff;
+            --dark: #2c3e50;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: var(--dark);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--white);
+            overflow: hidden;
+        }
+        .header {
+            position: absolute;
+            top: 20px;
+            text-align: center;
+            z-index: 10;
+        }
+        h1 { margin: 0; font-size: 24px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        .container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            border-radius: 20px;
+            overflow: hidden;
+            border: 5px solid var(--white);
+        }
+        #video, #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            border-radius: 15px;
+        }
+        #canvas { z-index: 5; }
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            z-index: 10;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        .capture-btn { background-color: var(--red); color: white; }
+        .capture-btn:hover { background-color: #e74c3c; transform: scale(1.1); }
+        .capture-btn:active { transform: scale(0.95); }
+
+        #modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        #captured-image {
+            max-width: 80%;
+            max-height: 70%;
+            border: 5px solid white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .modal-btns { display: flex; gap: 20px; }
+        .close-btn { background: #7f8c8d; color: white; }
+        .download-btn { background: #27ae60; color: white; }
+
+        .loading {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--dark);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="loading" id="loader">AI 모델 로딩 중... 잠시만 기다려주세요! 🎅</div>
+
+    <div class="header">
+        <h1>🎅 실시간 산타 AR 필터</h1>
+    </div>
+
+    <div class="container">
+        <video id="video" width="640" height="480" autoplay muted playsinline></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+
+    <div class="controls">
+        <button class="capture-btn" onclick="capturePhoto()">📸 사진 촬영</button>
+    </div>
+
+    <div id="modal">
+        <h2>미리보기</h2>
+        <img id="captured-image" src="" alt="Captured">
+        <div class="modal-btns">
+            <button class="download-btn" id="download-btn">저장하기</button>
+            <button class="close-btn" onclick="closeModal()">닫기</button>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const loader = document.getElementById('loader');
+        let model;
+
+        // Santa Hat Image
+        const hatImg = new Image();
+        hatImg.src = 'https://i.imgur.com/vHqB5zT.png'; // Transparent Santa Hat
+
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480 },
+                audio: false
+            });
+            video.srcObject = stream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => resolve(video);
+            });
+        }
+
+        async function detectFaces() {
+            const predictions = await model.estimateFaces(video, false);
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (predictions.length > 0) {
+                predictions.forEach(prediction => {
+                    const start = prediction.topLeft;
+                    const end = prediction.bottomRight;
+                    const size = [end[0] - start[0], end[1] - start[1]];
+                    
+                    // Face center and dimensions
+                    const faceWidth = size[0];
+                    const hatWidth = faceWidth * 1.5;
+                    const hatHeight = hatWidth * 0.8;
+                    const hatX = start[0] - (faceWidth * 0.25);
+                    const hatY = start[1] - (faceWidth * 0.7);
+
+                    // Draw Santa Hat
+                    ctx.drawImage(hatImg, hatX, hatY, hatWidth, hatHeight);
+                });
+            }
+            requestAnimationFrame(detectFaces);
+        }
+
+        async function main() {
+            await setupCamera();
+            video.play();
+            model = await blazeface.load();
+            loader.style.display = 'none';
+            detectFaces();
+        }
+
+        function capturePhoto() {
+            const captureCanvas = document.createElement('canvas');
+            captureCanvas.width = 640;
+            captureCanvas.height = 480;
+            const captureCtx = captureCanvas.getContext('2d');
+            
+            // Draw Video
+            captureCtx.drawImage(video, 0, 0, 640, 480);
+            // Draw Filter
+            captureCtx.drawImage(canvas, 0, 0, 640, 480);
+            
+            const dataUrl = captureCanvas.toDataURL('image/png');
+            document.getElementById('captured-image').src = dataUrl;
+            document.getElementById('modal').style.display = 'flex';
+            
+            document.getElementById('download-btn').onclick = () => {
+                const link = document.createElement('a');
+                link.download = 'santa-photo.png';
+                link.href = dataUrl;
+                link.click();
+            };
+        }
+
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+
+        main();
+    </script>
+</body>
+</html>
