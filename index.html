@@ -97,6 +97,26 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
+            font-size: 24px;
+        }
+        
+        #countdown-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-size: 150px;
+            font-weight: bold;
+            color: var(--white);
+            text-shadow: 0 0 20px var(--red);
+            animation: pulse 0.5s infinite alternate;
+        }
+        @keyframes pulse {
+            from { transform: scale(1); opacity: 0.8; }
+            to { transform: scale(1.1); opacity: 1; }
         }
     </style>
 </head>
@@ -110,10 +130,11 @@
     <div class="container">
         <video id="video" width="640" height="480" autoplay muted playsinline></video>
         <canvas id="canvas" width="640" height="480"></canvas>
+        <div id="countdown-overlay"></div>
     </div>
 
     <div class="controls">
-        <button class="capture-btn" onclick="capturePhoto()">📸 사진 촬영</button>
+        <button class="capture-btn" onclick="prepareCapture()">📸 사진 촬영</button>
     </div>
 
     <div id="modal">
@@ -130,11 +151,28 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const loader = document.getElementById('loader');
+        const countdownOverlay = document.getElementById('countdown-overlay');
         let model;
 
-        // Santa Hat Image
+        // --- 사운드 효과 ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep(freq, duration = 0.1, type = 'sine') {
+            const oscillator = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            oscillator.connect(gain);
+            gain.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + duration);
+        }
+
+        // Santa Hat Image (Using a more robust, raw GitHub link)
         const hatImg = new Image();
-        hatImg.src = 'https://i.imgur.com/vHqB5zT.png'; // Transparent Santa Hat
+        hatImg.crossOrigin = "anonymous";
+        hatImg.src = 'https://raw.githubusercontent.com/ajzbc/AR_Santa_Hat/main/santa_hat.png';
 
         async function setupCamera() {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -148,6 +186,10 @@
         }
 
         async function detectFaces() {
+            if (!model) {
+                requestAnimationFrame(detectFaces);
+                return;
+            }
             const predictions = await model.estimateFaces(video, false);
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -180,7 +222,31 @@
             detectFaces();
         }
 
-        function capturePhoto() {
+        function prepareCapture() {
+            countdownOverlay.style.display = 'flex';
+            let count = 3;
+            countdownOverlay.textContent = count;
+            
+            const countdownInterval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownOverlay.textContent = count;
+                    playBeep(440, 0.1, 'square'); // 일반 카운트 소리
+                } else if (count === 0) {
+                    countdownOverlay.textContent = '찰칵!';
+                    playBeep(880, 0.2, 'square'); // 찰칵 소리
+                    
+                    // 캡처 실행
+                    setTimeout(() => {
+                        captureAndShow();
+                        clearInterval(countdownInterval);
+                        countdownOverlay.style.display = 'none';
+                    }, 500); // 찰칵 소리 후 캡처
+                }
+            }, 1000);
+        }
+
+        function captureAndShow() {
             const captureCanvas = document.createElement('canvas');
             captureCanvas.width = 640;
             captureCanvas.height = 480;
